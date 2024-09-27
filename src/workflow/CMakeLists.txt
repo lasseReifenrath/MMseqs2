@@ -14,7 +14,6 @@ set(workflow_source_files
         workflow/Search.cpp
         workflow/Taxonomy.cpp
         workflow/EasyTaxonomy.cpp
-        workflow/EasyProteomecluster.cpp
         workflow/CreateIndex.cpp
         PARENT_SCOPE
         )

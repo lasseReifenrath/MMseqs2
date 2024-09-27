@@ -95,8 +95,6 @@ public:
                     }else{
                         failSuffix = "_aln";
                     }
-                } else if (databaseType & SOURCE) {
-                    failSuffix = "";
                 }
             }
             sequenceReader = new DBReader<unsigned int>(
@@ -117,7 +115,6 @@ public:
     static const unsigned int SRC_HEADERS = 4;
     static const unsigned int SRC_SEQUENCES =  8;
     static const unsigned int ALIGNMENTS = 16;
-    static const unsigned int SOURCE = 32;
     static const unsigned int USER_SELECT = 1 << 31;
 
     static unsigned int makeUserDatabaseType(unsigned int baseKey) {

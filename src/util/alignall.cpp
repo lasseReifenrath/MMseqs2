@@ -27,8 +27,7 @@ int alignall(int argc, const char **argv, const Command &command) {
     }
     unsigned int swMode = Alignment::initSWMode(par.alignmentMode, par.covThr, par.seqIdThr);
 
-    DBReader<unsigned int> tdbr(par.db1.c_str(), par.db1Index.c_str(), par.threads, DBReader<unsigned int>::USE_DATA|DBReader<unsigned int>::USE_INDEX|DBReader<unsigned int>::USE_LOOKUP);
-
+    DBReader<unsigned int> tdbr(par.db1.c_str(), par.db1Index.c_str(), par.threads, DBReader<unsigned int>::USE_DATA|DBReader<unsigned int>::USE_INDEX);
     tdbr.open(DBReader<unsigned int>::NOSORT);
     if (par.preloadMode != Parameters::PRELOAD_MODE_MMAP) {
         tdbr.readMmapedDataInMemory();
@@ -81,6 +80,7 @@ int alignall(int argc, const char **argv, const Command &command) {
 #pragma omp for schedule(dynamic, 1)
             for (size_t id = start; id < (start + bucketSize); id++) {
                 progress.updateProgress();
+
                 const unsigned int key = dbr_res.getDbKey(id);
                 char *data = dbr_res.getData(id, thread_idx);
 

@@ -98,10 +98,7 @@ public:
             return false;
         }
     };
-    struct SourceEntry{
-        T id;
-        std::string fileName;
-    };
+
     struct LookupEntry {
         T id;
         std::string entryName;
@@ -251,8 +248,6 @@ public:
     void lookupEntryToBuffer(std::string& buffer, const LookupEntry& entry);
     LookupEntry* getLookup() { return lookup; };
 
-    std::string getSourceFileName(size_t id);
-    T getSourceKey(size_t id);
     static const int NOSORT = 0;
     static const int SORT_BY_LENGTH = 1;
     static const int LINEAR_ACCCESS = 2;
@@ -271,7 +266,6 @@ public:
     static const unsigned int USE_FREAD      = 4;
     static const unsigned int USE_LOOKUP     = 8;
     static const unsigned int USE_LOOKUP_REV = 16;
-    static const unsigned int USE_SOURCE     = 32;
 
 
     // compressed
@@ -314,8 +308,6 @@ public:
     bool readIndex(char *data, size_t indexDataSize, Index *index, size_t & dataSize);
 
     void readLookup(char *data, size_t dataSize, LookupEntry *lookup);
-
-    void readSource(char *data, size_t dataSize, SourceEntry *source);
 
     void readIndexId(T* id, char * line, const char** cols);
 
@@ -493,9 +485,7 @@ private:
 
     Index * index;
     size_t lookupSize;
-    size_t sourceSize;
     LookupEntry * lookup;
-    SourceEntry * source;
     bool sortedByOffset;
 
     unsigned int * id2local;
