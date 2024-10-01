@@ -1300,6 +1300,17 @@ Parameters::Parameters():
     createlinindex = combineList(createlinindex, translatenucs);
     createlinindex.push_back(&PARAM_REMOVE_TMP_FILES);
 
+    // fwbw workflow
+    fwbw.push_back(&PARAM_SUB_MAT);
+    fwbw.push_back(&PARAM_GAP_OPEN);
+    fwbw.push_back(&PARAM_GAP_EXTEND);
+    fwbw.push_back(&PARAM_E);
+    fwbw.push_back(&PARAM_C);
+    fwbw.push_back(&PARAM_ADD_BACKTRACE);
+    fwbw.push_back(&PARAM_THREADS);
+    fwbw.push_back(&PARAM_COMPRESSED);
+    fwbw.push_back(&PARAM_V);
+
     // linclust workflow
     linclustworkflow = combineList(clust, align);
     linclustworkflow = combineList(linclustworkflow, kmermatcher);

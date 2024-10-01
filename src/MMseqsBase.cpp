@@ -7,6 +7,15 @@ const char* MMSEQS_CURRENT_INDEX_VERSION = "16";
 
 Parameters& par = Parameters::getInstance();
 std::vector<Command> baseCommands = {
+        {"fwbw",                fwbw,                &par.fwbw,        COMMAND_ALIGNMENT,
+                "Forward-Backward realignment",
+                NULL,
+                "Martin Steinegger <martin.steinegger@snu.ac.kr>",
+                "<i:queryDB> <i:targetDB> <i:alignmentDB> <o:alignmentDB>",
+                CITATION_MMSEQS2, {{"queryDB", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::sequenceDb },
+                                                           {"targetDB", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::sequenceDb },
+                                                           {"alignmentDB", DbType::ACCESS_MODE_INPUT, DbType::NEED_DATA, &DbValidator::alignmentDb },
+                                                           {"fwbwAlignmentDB", DbType::ACCESS_MODE_OUTPUT, DbType::NEED_DATA, &DbValidator::alignmentDb }}},
         {"easy-search",          easysearch,           &par.easysearchworkflow,   COMMAND_EASY,
                 "Sensitive homology search",
                 "# Search multiple FASTA against FASTA (like BLASTP, TBLASTN, BLASTX, BLASTN --search-type 3, TBLASTX --search-type 2)\n"
