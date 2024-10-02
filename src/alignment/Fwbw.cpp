@@ -1,3 +1,4 @@
+#include "FWBW.h"
 #include "Debug.h"
 #include "DBReader.h"
 #include "DBWriter.h"
@@ -6,19 +7,25 @@
 #include "Matcher.h"
 #include "Util.h"
 #include "Parameters.h"
-#include "Fwbw.h"
+
 #include <iostream>
 #include <algorithm>
+#include <limits>
+#include <cfloat>
+#include <numeric>
+#include <cmath>
+#include <vector>
+
+
 #ifdef OPENMP
 #include <omp.h>
 #endif
 
-
-FwBwAligner::FwBwAligner(size_t maxQueryLen, size_t maxTargetLen,
+FwBwAligner::FwBwAligner(const std::string &querySeq, const std::string &targetSeq,
                          SubstitutionMatrix &subMat){
-    // size_t maxQueryLen = querySeq.size();
-    // size_t maxTargetLen = targetSeq.size();
-    
+    size_t maxQueryLen = querySeq.size();
+    size_t maxTargetLen = targetSeq.size();
+
     zmForward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
     zeForward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
     zfForward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
@@ -46,8 +53,7 @@ FwBwAligner::FwBwAligner(size_t maxQueryLen, size_t maxTargetLen,
     blosum = malloc_matrix<float>(21, 21);
     for (int i = 0; i < subMat.alphabetSize; ++i) {
         for (int j = 0; j < subMat.alphabetSize; ++j) {
-            // mat3di[i][j] = static_cast<float>(subMat3Di.subMatrix[i][j]) * 2;
-            blosum[i][j] = static_cast<float>(subMat.subMatrix[i][j]) * 2;
+            blosum[i][j] = static_cast<float>(subMat.subMatrix[i][j]) * 2; //blosum is same for every iteration. Maybe we can define it previously like subMat
         }
     }
 }
@@ -58,8 +64,7 @@ void FwBwAligner::computeForwardScoreMatrix(const unsigned char* queryNum, const
                                                 float** blosum, float T, float ** scoreForward) {
     for (size_t i = 0; i < queryLen; ++i) {
         for (size_t j = 0; j < targetLen; ++j) {
-            // scoreForward[i][j] = mat3di[ss1_num[i]][ss2_num[j]] + blosum[queryNum[i]][targetNum[j]];
-            scoreForward[i][j] = blosum[queryNum[i]][targetNum[j]];
+            scoreForward[i][j] = blosum[queryNum[i]][targetNum[j]]; //mat3di[ss1_num[i]][ss2_num[j]]
             scoreForward[i][j] = exp(scoreForward[i][j] / T);
         }
     }
@@ -79,8 +84,9 @@ FwBwAligner::~FwBwAligner(){
     free(zmaxBlocksMaxBackward);
     free(zmaxForward);
     free(zmaxBackward);
-    free(vj);
+    free(vj); 
     free(wj);
+    free(blosum);
 }
 
 
@@ -88,8 +94,6 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     const unsigned int queryLen = querySeq.size();
     const unsigned int targetLen = targetSeq.size();
 
-    // unsigned char* ss1_num = seq2num(query3Di, subMat3Di.Seq2num);
-    // unsigned char* ss2_num = seq2num(target3Di, subMat3Di.Seq2num);
     unsigned char* queryNum = seq2num(querySeq, subMat.aa2num);
     unsigned char* targetNum = seq2num(targetSeq, subMat.aa2num);
 
@@ -97,15 +101,16 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     const float go = -3.5;
     const float ge = -0.3;
     computeForwardScoreMatrix(queryNum, targetNum,
-                              queryLen, targetLen, blosum, T, scoreForward);
+                              queryLen, targetLen, 
+                              blosum, T, scoreForward);
     for (size_t i = 0; i < queryLen; ++i) {
         for (size_t j = 0; j < targetLen; ++j) {
             scoreBackward[i][j] = scoreForward[queryLen - 1 - i][targetLen - 1 - j];
         }
     }
 
-    size_t length = targetLen / 4;
-    size_t blocks = targetLen / length;
+    unsigned int length = targetLen / 4;
+    int blocks = targetLen / length;
 
     for (size_t i = 0; i < length; ++i) {
         vj[i] = exp(((length - 1) * ge + go - i * ge) / T);
@@ -134,10 +139,10 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
         zInitForward[1][i] = zeForward[i][0];
         zInitForward[2][i] = zfForward[i][0];
     }
-    float** zmaxBlocksMaxForward = malloc_matrix<float>(blocks + 1, queryLen + 1);
-    for (size_t b = 0; b < blocks; ++b) {
-        size_t start = b * length;
-        size_t end = (b + 1) * length;
+    float** zmaxBlocksMaxForward = malloc_matrix<float>(blocks+1, queryLen + 1);
+    for (int b = 0; b < blocks; ++b) {
+        int start = b * length;
+        int end = (b + 1) * length;
         forwardBackwardSaveBlockMaxLocal(scoreForward, zInitForward, vj, wj, T, go, ge, queryLen, start, end,
                                          zmForward, zeForward, zfForward,
                                          zmaxForward);
@@ -161,13 +166,13 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     float** zmaxBlocksMaxBackward = malloc_matrix<float>(blocks+1, queryLen + 1);
     // memcpy(zmaxBlocksMaxBackward[0], zmaxBackward, (queryLen + 1) * sizeof(float));
 
-    for (size_t b = 0; b < blocks; ++b) {
-        size_t start = b * length;
-        size_t end = (b + 1) * length;
+    for (int b = 0; b < blocks; ++b) {
+        int start = b * length;
+        int end = (b + 1) * length;
         forwardBackwardSaveBlockMaxLocal(scoreBackward, zInitBackward, vj, wj, T, go, ge, queryLen, start, end,
                                          zmBackward, zeBackward, zfBackward,
                                          zmaxBackward);
-        memcpy(zmaxBlocksMaxBackward[b + 1], zmaxBackward, (queryLen + 1) * sizeof(float));
+        memcpy(zmaxBlocksMaxBackward[b+1], zmaxBackward, (queryLen + 1) * sizeof(float));
     }
 
     ///////////////////////////////////Rescale////////////////////////////////////////
@@ -232,15 +237,17 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
         }
     }
 
-    // traceback 
+//     // traceback 
     s_align result;
     result.cigar = "";
     result.cigar.reserve(queryLen + targetLen);
+    result.maxProb = max_p;
     result.qEndPos1 = max_i;
     result.dbEndPos1 = max_j;
     float d;
     float l;
     float u;
+    // size_t index = 0;
     while (max_i > 0 && max_j > 0) {
         d = P[max_i - 1][max_j - 1];
         l = P[max_i][max_j - 1];
@@ -376,7 +383,7 @@ void FwBwAligner::forwardBackwardSaveBlockMaxLocal(float** S, float** z_init,
 
 void FwBwAligner::rescaleBlocks(float **matrix, float **scale, size_t rows, int length, int blocks){
     // Function to rescale the values by the maximum in the log space for each block
-    for (size_t b = 0; b < blocks; ++b) {
+    for (int b = 0; b < blocks; ++b) {
         size_t start = b * length;
         size_t end = (b + 1) * length;
         std::vector<float> cumsum(rows);
@@ -390,14 +397,10 @@ void FwBwAligner::rescaleBlocks(float **matrix, float **scale, size_t rows, int 
     }
 }
 
-
-
 int fwbw(int argc, const char **argv, const Command &command) {
     //Prepare the parameters & DB
     Parameters &par = Parameters::getInstance();
     par.parseParameters(argc, argv, command, true, 0, MMseqsParameter::COMMAND_ALIGN);
-    // FwBwAligner fwbwAln(par.db1, par.db2, par.db3, par.db4, par.db4Index);
-
     DBReader<unsigned int> qdbr(par.db1.c_str(), par.db1Index.c_str(), par.threads, DBReader<unsigned int>::USE_DATA | DBReader<unsigned int>::USE_INDEX);
     qdbr.open(DBReader<unsigned int>::NOSORT);
     DBReader<unsigned int> tdbr(par.db2.c_str(), par.db2Index.c_str(), par.threads, DBReader<unsigned int>::USE_DATA | DBReader<unsigned int>::USE_INDEX);
@@ -424,7 +427,7 @@ int fwbw(int argc, const char **argv, const Command &command) {
         // gapOpen = -3.5;
         // gapExtend = -0.3;
         // Temperature = 10;
-
+    
     const size_t flushSize = 100000000;
     size_t iterations = static_cast<int>(ceil(static_cast<double>(alnRes.getSize()) / static_cast<double>(flushSize)));
     Debug(Debug::INFO) << "Processing " << iterations << " iterations\n";
@@ -436,7 +439,7 @@ int fwbw(int argc, const char **argv, const Command &command) {
 #pragma omp parallel
         {
             unsigned int thread_idx = 0;
-
+        
 #ifdef OPENMP
             thread_idx = (unsigned int) omp_get_thread_num();
 #endif
@@ -479,14 +482,12 @@ int fwbw(int argc, const char **argv, const Command &command) {
                 for (size_t i=0; i < alnResults.size(); i++){
                     unsigned int targetKey = alnResults[i].dbKey;
                     char* targetSeq = tdbr.getData(targetKey, thread_idx);
-                    size_t targetLen = tdbr.getSeqLen(targetKey);
-                    // FwBwAligner fwbwAligner(querySeq, targetSeq, queryLen, targetLen, subMat);
-                    FwBwAligner fwbwAligner(queryLen, targetLen, subMat);
+                    FwBwAligner fwbwAligner(querySeq, targetSeq, subMat);
                     FwBwAligner::s_align fwbwResult = fwbwAligner.align(querySeq, targetSeq, subMat);
                     float maxProb = fwbwResult.maxProb;
                     localFwbwResults.emplace_back(maxProb, alnResults[i]);
                 }
-
+                
                 SORT_SERIAL(localFwbwResults.begin(), localFwbwResults.end(),[](const std::pair<float, Matcher::result_t>& a, const std::pair<float, Matcher::result_t>& b) {
                         return a.first > b.first; 
                     });
@@ -510,5 +511,5 @@ int fwbw(int argc, const char **argv, const Command &command) {
     qdbr.close();
     tdbr.close();
     return EXIT_SUCCESS;
-
+    
 }
