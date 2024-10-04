@@ -31,10 +31,10 @@ public:
     } s_align;
 
     FwBwAligner(const std::string & querySeq, const std::string & targetSeq,
-                SubstitutionMatrix & subMat);
+                SubstitutionMatrix * subMat);
     ~FwBwAligner();
 
-    s_align align(const std::string & querySeq, const std::string & targetSeq, SubstitutionMatrix & subMat);
+    s_align align(const std::string & querySeq, const std::string & targetSeq, SubstitutionMatrix * subMat);
 
     void computeForwardScoreMatrix(const unsigned char* queryNum, const unsigned char* targetNum,
                                    unsigned int queryLen, unsigned int targetLen,
@@ -101,6 +101,10 @@ private:
     float *wj;
     // float** mat3di;
     float** blosum;
+
+    unsigned int chunkSize;
+    unsigned int length;
+    int blocks;
 
     // float gapOpen;
     // float gapExtend;

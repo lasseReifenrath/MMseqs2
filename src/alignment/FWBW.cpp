@@ -15,14 +15,14 @@
 #include <numeric>
 #include <cmath>
 #include <vector>
-
+#include "Timer.h"
 
 #ifdef OPENMP
 #include <omp.h>
 #endif
 
 FwBwAligner::FwBwAligner(const std::string &querySeq, const std::string &targetSeq,
-                         SubstitutionMatrix &subMat){
+                         SubstitutionMatrix *subMat){
     size_t maxQueryLen = querySeq.size();
     size_t maxTargetLen = targetSeq.size();
 
@@ -35,11 +35,12 @@ FwBwAligner::FwBwAligner(const std::string &querySeq, const std::string &targetS
     scoreForward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
     scoreBackward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
     P = malloc_matrix<float>(maxQueryLen, maxTargetLen);
-    int length = maxTargetLen / 4;
+    chunkSize = 10;
+    length = maxTargetLen / chunkSize;
+    blocks = maxTargetLen / length;
+
     vj = static_cast<float*>(mem_align(16, length * sizeof(float)));
     wj = static_cast<float*>(mem_align(16, length * sizeof(float)));
-
-    int blocks = maxTargetLen / length;
 
     zmaxBlocksMaxForward = malloc_matrix<float>(blocks, maxQueryLen + 1);
     zmaxBlocksMaxBackward = malloc_matrix<float>(blocks, maxQueryLen + 1);
@@ -51,9 +52,9 @@ FwBwAligner::FwBwAligner(const std::string &querySeq, const std::string &targetS
 
     // mat3di = malloc_matrix<float>(21, 21);
     blosum = malloc_matrix<float>(21, 21);
-    for (int i = 0; i < subMat.alphabetSize; ++i) {
-        for (int j = 0; j < subMat.alphabetSize; ++j) {
-            blosum[i][j] = static_cast<float>(subMat.subMatrix[i][j]) * 2; //blosum is same for every iteration. Maybe we can define it previously like subMat
+    for (int i = 0; i < subMat->alphabetSize; ++i) {
+        for (int j = 0; j < subMat->alphabetSize; ++j) {
+            blosum[i][j] = static_cast<float>(subMat->subMatrix[i][j]) * 2; //blosum is same for every iteration. Maybe we can define it previously like subMat
         }
     }
 }
@@ -90,12 +91,12 @@ FwBwAligner::~FwBwAligner(){
 }
 
 
-FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std::string & targetSeq, SubstitutionMatrix &subMat){
+FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std::string & targetSeq, SubstitutionMatrix *subMat){
     const unsigned int queryLen = querySeq.size();
     const unsigned int targetLen = targetSeq.size();
 
-    unsigned char* queryNum = seq2num(querySeq, subMat.aa2num);
-    unsigned char* targetNum = seq2num(targetSeq, subMat.aa2num);
+    unsigned char* queryNum = seq2num(querySeq, subMat->aa2num);
+    unsigned char* targetNum = seq2num(targetSeq, subMat->aa2num);
 
     const float T = 10;
     const float go = -3.5;
@@ -108,9 +109,6 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
             scoreBackward[i][j] = scoreForward[queryLen - 1 - i][targetLen - 1 - j];
         }
     }
-
-    unsigned int length = targetLen / 4;
-    int blocks = targetLen / length;
 
     for (size_t i = 0; i < length; ++i) {
         vj[i] = exp(((length - 1) * ge + go - i * ge) / T);
@@ -416,17 +414,14 @@ int fwbw(int argc, const char **argv, const Command &command) {
     // Initialize the alignment mode
     // float gapOpen, gapExtend, Temperature;
     const int querySeqType = qdbr.getDbtype();
+    SubstitutionMatrix* subMat = nullptr;
     if (Parameters::isEqualDbtype(querySeqType, Parameters::DBTYPE_NUCLEOTIDES)) {
-        // m = new NucleotideMatrix(par.scoringMatrixFile.values.nucleotide().c_str(), 1.0, par.scoreBias);
-        // gapOpen = par.gapOpen.values.nucleotide();
-        // gapExtend = par.gapExtend.values.nucleotide();
         Debug(Debug::ERROR) << "Invalid datatype. Nucleotide.\n";
         EXIT(EXIT_FAILURE);
-    } 
-    SubstitutionMatrix subMat = SubstitutionMatrix(par.scoringMatrixFile.values.aminoacid().c_str(), 1.4, par.scoreBias); // Check : par.scoreBias = 0.0
-        // gapOpen = -3.5;
-        // gapExtend = -0.3;
-        // Temperature = 10;
+    } else{
+        subMat = new SubstitutionMatrix(par.scoringMatrixFile.values.aminoacid().c_str(), 1.4, par.scoreBias);
+    }
+        
     
     const size_t flushSize = 100000000;
     size_t iterations = static_cast<int>(ceil(static_cast<double>(alnRes.getSize()) / static_cast<double>(flushSize)));
@@ -454,9 +449,11 @@ int fwbw(int argc, const char **argv, const Command &command) {
             for (size_t id = start; id < (start + bucketSize); id++) {
                 progress.updateProgress();
                 unsigned int key = alnRes.getDbKey(id);
-                Debug(Debug::INFO) << "start " << id <<" ";
                 const unsigned int queryId = qdbr.getId(key);
                 const unsigned int queryKey = qdbr.getDbKey(queryId);
+
+                // Timer timer;
+                // Debug(Debug::INFO) << "start " << id << " queryKey" << queryKey << " ";
                 char *alnData = alnRes.getData(id, thread_idx);
                 alnResults.clear();
                 localFwbwResults.clear();
@@ -472,6 +469,8 @@ int fwbw(int argc, const char **argv, const Command &command) {
                 }
                 if (alnResults.size() == 0){
                     continue;
+                    //Does it mean some query has no alignment result? 
+                    //If so, we don't need to run fwbw for this query.
                 }
                 char* querySeq = qdbr.getData(queryKey, thread_idx);
                 size_t queryLen = qdbr.getSeqLen(queryKey);
@@ -484,7 +483,13 @@ int fwbw(int argc, const char **argv, const Command &command) {
                     char* targetSeq = tdbr.getData(targetKey, thread_idx);
                     FwBwAligner fwbwAligner(querySeq, targetSeq, subMat);
                     FwBwAligner::s_align fwbwResult = fwbwAligner.align(querySeq, targetSeq, subMat);
+                    uint32_t score1 = fwbwResult.score1;
+                    Debug(Debug::INFO) << "Query: " << queryKey << " Target: " << targetKey << "score1: " << score1 << "\n";
+
                     float maxProb = fwbwResult.maxProb;
+                    if (maxProb > 1.0){
+                        Debug(Debug::ERROR) << "Invalid probability value: " << maxProb << "\n";
+                    }
                     localFwbwResults.emplace_back(maxProb, alnResults[i]);
                 }
                 
@@ -492,20 +497,25 @@ int fwbw(int argc, const char **argv, const Command &command) {
                         return a.first > b.first; 
                     });
                 for (size_t i=0; i < localFwbwResults.size(); i++){
-                    char* basePos = tmpBuff;
-                    tmpBuff = Util::fastSeqIdToBuffer(localFwbwResults[i].first, tmpBuff);
-                    *(tmpBuff-1) = '\t';
-                    const unsigned int probLen = tmpBuff - basePos;
+                    // char* basePos = tmpBuff;
+                    // tmpBuff = Util::fastSeqIdToBuffer(localFwbwResults[i].first, tmpBuff);
+                    // *(tmpBuff-1) = '\t';
+                    // const unsigned int probLen = tmpBuff - basePos;
                     size_t alnLen = Matcher::resultToBuffer(tmpBuff, localFwbwResults[i].second, par.addBacktrace);
-                    fwbwAlnWriter.writeAdd(buffer, queryIdLen+probLen+alnLen, thread_idx);
+                    // fwbwAlnWriter.writeAdd(buffer, queryIdLen+probLen+alnLen, thread_idx);
+                    fwbwAlnWriter.writeAdd(buffer, alnLen, thread_idx);
+
                 }
                 fwbwAlnWriter.writeEnd(queryKey, thread_idx);
-                Debug(Debug::INFO) << "end " << id << "\n";
+                // Debug(Debug::INFO) << "end " << id << "\n";
+                // Debug(Debug::INFO) << timer.lap() << "\n";
+                // timer.reset();
             }
         }
         alnRes.remapData();
     }
     Debug(Debug::INFO) << "All Done\n";
+    delete subMat;
     fwbwAlnWriter.close();
     alnRes.close();
     qdbr.close();
