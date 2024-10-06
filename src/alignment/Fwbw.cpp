@@ -181,25 +181,6 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     rescaleBlocks(zmForward, zmaxBlocksMaxForward, queryLen, length, blocks);
     rescaleBlocks(zmBackward, zmaxBlocksMaxBackward, queryLen, length, blocks);
 
-    ////////////////////////////////Check Output
-    // std::cout << "Forward matrix" << std::endl;
-    // for (size_t i=0; i < 8; ++i){
-    //     for (size_t j = 0; j < 8; ++j) {
-    //         std::cout << std::fixed << std::setprecision(5) << zmForward[i][j] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "Backward matrix" << std::endl;
-    // for (size_t i=0; i < 8; ++i){
-    //     for (size_t j=0; j < 8; ++j) {
-    //         std::cout << std::fixed << std::setprecision(5) << zmBackward[i][j] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // std::cout << std::endl;
-
    // compute zm max
     float max_zm = -DBL_MAX;
     for (size_t i = 0; i < queryLen; ++i) {
@@ -446,10 +427,11 @@ int fwbw(int argc, const char **argv, const Command &command) {
             const char *entry[255];
             // std::string alnResultsOutString;
             // alnResultsOutString.reserve(1024*1024);
+            std::string alnResultsOutString;
             char buffer[1024 + 32768*4];
             std::vector<Matcher::result_t> alnResults;
             alnResults.reserve(300);
-            std::vector<std::pair<float, Matcher::result_t>> localFwbwResults;
+            std::vector<Matcher::result_t> localFwbwResults;
 #pragma omp for schedule(dynamic,1)
             for (size_t id = start; id < (start + bucketSize); id++) {
                 progress.updateProgress();
@@ -474,34 +456,59 @@ int fwbw(int argc, const char **argv, const Command &command) {
                     continue;
                 }
                 char* querySeq = qdbr.getData(queryKey, thread_idx);
-                size_t queryLen = qdbr.getSeqLen(queryKey);
+                size_t queryLen = strlen(querySeq);
                 fwbwAlnWriter.writeStart(thread_idx);
-                char * tmpBuff = Itoa::u32toa_sse2((uint32_t) queryKey, buffer);
-                *(tmpBuff-1) = '\t';
-                const unsigned int queryIdLen = tmpBuff - buffer;
+                // char * tmpBuff = Itoa::u32toa_sse2((uint32_t) queryKey, buffer);
+                // *(tmpBuff-1) = '\t';
+                // const unsigned int queryIdLen = tmpBuff - buffer;
                 for (size_t i=0; i < alnResults.size(); i++){
                     unsigned int targetKey = alnResults[i].dbKey;
                     char* targetSeq = tdbr.getData(targetKey, thread_idx);
-                    size_t targetLen = tdbr.getSeqLen(targetKey);
-                    // FwBwAligner fwbwAligner(querySeq, targetSeq, queryLen, targetLen, subMat);
+                    size_t targetLen = strlen(targetSeq);
+                    
+                    // query and target sequences are not needed in initializing aligner. Only lengths are passed
                     FwBwAligner fwbwAligner(queryLen, targetLen, subMat);
-                    FwBwAligner::s_align fwbwResult = fwbwAligner.align(querySeq, targetSeq, subMat);
-                    float maxProb = fwbwResult.maxProb;
-                    localFwbwResults.emplace_back(maxProb, alnResults[i]);
+                    FwBwAligner::s_align fwbwAlignment = fwbwAligner.align(querySeq, targetSeq, subMat);
+
+                    // initialize values of result_t
+                    float qcov = 0.0;
+                    float dbcov = 0.0;
+                    float seqId = 0.0;
+                    float evalue = 0.0;
+                    const unsigned int alnLength = fwbwAlignment.cigarLen;
+                    const unsigned int fwbwscore = fwbwAlignment.maxProb;
+                    const unsigned int qStartPos = fwbwAlignment.qStartPos1;
+                    const unsigned int dbStartPos = fwbwAlignment.dbStartPos1;
+                    const unsigned int qEndPos = fwbwAlignment.qEndPos1;
+                    const unsigned int dbEndPos = fwbwAlignment.dbEndPos1;
+                    std::string backtrace = fwbwAlignment.cigar;
+
+                    // Map s_align values to result_t
+                    Matcher::result_t res = Matcher::result_t(targetKey, fwbwscore, qcov, dbcov, seqId, evalue, alnLength, qStartPos, qEndPos, queryLen, dbEndPos, dbStartPos, targetLen, backtrace);
+                    
+                    localFwbwResults.emplace_back(res);
                 }
 
-                SORT_SERIAL(localFwbwResults.begin(), localFwbwResults.end(),[](const std::pair<float, Matcher::result_t>& a, const std::pair<float, Matcher::result_t>& b) {
-                        return a.first > b.first; 
-                    });
-                for (size_t i=0; i < localFwbwResults.size(); i++){
-                    char* basePos = tmpBuff;
-                    tmpBuff = Util::fastSeqIdToBuffer(localFwbwResults[i].first, tmpBuff);
-                    *(tmpBuff-1) = '\t';
-                    const unsigned int probLen = tmpBuff - basePos;
-                    size_t alnLen = Matcher::resultToBuffer(tmpBuff, localFwbwResults[i].second, par.addBacktrace);
-                    fwbwAlnWriter.writeAdd(buffer, queryIdLen+probLen+alnLen, thread_idx);
+                // sort local results. They will currently be sorted by first fwbwscore, then targetlen, then by targetkey.
+                SORT_SERIAL(localFwbwResults.begin(), localFwbwResults.end(), Matcher::compareHits);
+                std::vector<Matcher::result_t> *returnRes = &localFwbwResults;
+                for (size_t result = 0; result < returnRes->size(); result++) {
+                    size_t len = Matcher::resultToBuffer(buffer, (*returnRes)[result], par.addBacktrace);
+                    alnResultsOutString.append(buffer, len);
                 }
-                fwbwAlnWriter.writeEnd(queryKey, thread_idx);
+                alnResultsOutString.clear();
+
+                // fwbwAlnWriter.writeData(alnResultsOutString.c_str(), alnResultsOutString.length(), queryKey, thread_idx);
+
+                // for (size_t i=0; i < localFwbwResults.size(); i++){
+                //     char* basePos = tmpBuff;
+                //     tmpBuff = Util::fastSeqIdToBuffer(localFwbwResults[i].first, tmpBuff);
+                //     *(tmpBuff-1) = '\t';
+                //     const unsigned int probLen = tmpBuff - basePos;
+                //     size_t alnLen = Matcher::resultToBuffer(tmpBuff, localFwbwResults[i].second, par.addBacktrace);
+                //     fwbwAlnWriter.writeAdd(buffer, queryIdLen+probLen+alnLen, thread_idx);
+                // }
+                // fwbwAlnWriter.writeEnd(queryKey, thread_idx);
                 Debug(Debug::INFO) << "end " << id << "\n";
             }
         }
