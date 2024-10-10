@@ -36,8 +36,8 @@ FwBwAligner::FwBwAligner(size_t maxQueryLen, size_t maxTargetLen,
     scoreForward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
     scoreBackward = malloc_matrix<float>(maxQueryLen, maxTargetLen);
     P = malloc_matrix<float>(maxQueryLen, maxTargetLen);
-    // int length = maxTargetLen / 4;
-    int length = maxTargetLen / maxTargetLen;
+    int length = maxTargetLen / 4;
+    // int length = maxTargetLen / maxTargetLen;
     vj = static_cast<float*>(mem_align(16, length * sizeof(float)));
     wj = static_cast<float*>(mem_align(16, length * sizeof(float)));
 
@@ -112,8 +112,8 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
         }
     }
 
-    // size_t length = targetLen / 4;
-    size_t length = targetLen / targetLen;
+    size_t length = targetLen / 4;
+    // size_t length = targetLen / targetLen;
     size_t blocks = targetLen / length;
 
     for (size_t i = 0; i < length; ++i) {
@@ -227,7 +227,7 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
         }
     }
     // print elements of P[max_i][max_j]
-    // Debug(Debug::INFO) << "elements: " << zmForward[max_i][max_j] << " " << zmBackward[queryLen - 1 - max_i][targetLen - 1 - max_j] << " " << log(scoreForward[max_i][max_j]) << " " << logsumexp_zm << " " << P[max_i][max_j] << " " << max_p << "\n";
+    Debug(Debug::INFO) << "elements: " << zmForward[max_i][max_j] << " " << zmBackward[queryLen - 1 - max_i][targetLen - 1 - max_j] << " " << log(scoreForward[max_i][max_j]) << " " << logsumexp_zm << " " << P[max_i][max_j] << " " << max_p << "\n";
     // If max_p is above 100000, print max_p, querySeq, targetSeq and terminate
     std::cout << "max_p: " << max_p << std::endl;
 
@@ -486,9 +486,15 @@ int fwbw(int argc, const char **argv, const Command &command) {
                     float qcov = 0.0;
                     float dbcov = 0.0;
                     float seqId = 0.0;
-                    float evalue = 0.0;
+                    float evalue = fwbwAlignment.maxProb;
+                    if (evalue > 1.0) {
+                        evalue = 1.0;
+                    }
+                    else if (evalue < 0.0) {
+                        evalue = 0.0;
+                    }
                     const unsigned int alnLength = fwbwAlignment.cigarLen;
-                    const int fwbwscore = (int) log(fwbwAlignment.maxProb);
+                    const int score = 0;
                     const unsigned int qStartPos = fwbwAlignment.qStartPos1;
                     const unsigned int dbStartPos = fwbwAlignment.dbStartPos1;
                     const unsigned int qEndPos = fwbwAlignment.qEndPos1;
@@ -497,7 +503,7 @@ int fwbw(int argc, const char **argv, const Command &command) {
 
                     // Map s_align values to result_t
                     // Debug(Debug::INFO) << "maxprob: " << fwbwscore << " " << log(fwbwAlignment.maxProb) << "\n";
-                    Matcher::result_t res = Matcher::result_t(targetKey, fwbwscore, qcov, dbcov, seqId, evalue, alnLength, qStartPos, qEndPos, queryLen, dbEndPos, dbStartPos, targetLen, backtrace);
+                    Matcher::result_t res = Matcher::result_t(targetKey, score, qcov, dbcov, seqId, evalue, alnLength, qStartPos, qEndPos, queryLen, dbEndPos, dbStartPos, targetLen, backtrace);
                     
                     localFwbwResults.emplace_back(res);
                 }
