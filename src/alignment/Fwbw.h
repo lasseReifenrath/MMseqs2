@@ -30,11 +30,12 @@ public:
         float maxProb;
     } s_align;
 
-    FwBwAligner(size_t maxQueryLen, size_t maxTargetLen,
+    FwBwAligner(size_t maxQueryLen, size_t maxTargetLen, size_t length, size_t blocks,
                 SubstitutionMatrix & subMat);
     ~FwBwAligner();
 
-    s_align align(const std::string & querySeq, const std::string & targetSeq, SubstitutionMatrix & subMat);
+    s_align align(const std::string & querySeq, const std::string & targetSeq,size_t queryLen, size_t targetLen,
+                                            size_t length, size_t blocks, SubstitutionMatrix & subMat);
 
     void computeForwardScoreMatrix(const unsigned char* queryNum, const unsigned char* targetNum,
                                    unsigned int queryLen, unsigned int targetLen,
@@ -111,11 +112,11 @@ private:
 
     void forwardBackwardSaveBlockMaxLocal(float** S, float** z_init, float* vj, float* wj,
                                           float T, float go, float ge,
-                                          size_t rows, size_t start, size_t end,
+                                          size_t rows, size_t start, size_t end, size_t memcpy_cols,
             // output is zm, ze, ze, zmax
                                           float** zm, float** ze, float** zf, float* zmax);
 
-    void rescaleBlocks(float **matrix, float **scale, size_t rows, int length, int blocks);
+    void rescaleBlocks(float **matrix, float **scale, size_t rows, size_t length, size_t blocks, size_t targetLen);
 
 };
 
