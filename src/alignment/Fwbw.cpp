@@ -21,6 +21,19 @@
 #include <omp.h>
 #endif
 
+struct States {
+    const static uint8_t STOP=0;
+    const static uint8_t M=1;
+    const static uint8_t I=2;
+    const static uint8_t D=3;
+};
+
+inline void calculate_max4(float& max, float& term1, float& term2, float& term3, float& term4, uint8_t& state) {
+    if (term1 > term2) { max = term1; state = States::STOP; }
+    else { max = term2; state = States::M; };
+    if (term3 > max) { max = term3; state = States::D; };
+    if (term4 > max) { max = term4; state = States::I; };
+}
 
 FwBwAligner::FwBwAligner(size_t queryLen, size_t targetLen, size_t length, size_t blocks,
                          SubstitutionMatrix &subMat){
@@ -34,6 +47,7 @@ FwBwAligner::FwBwAligner(size_t queryLen, size_t targetLen, size_t length, size_
     scoreForward = malloc_matrix<float>(queryLen, targetLen);
     scoreBackward = malloc_matrix<float>(queryLen, targetLen);
     P = malloc_matrix<float>(queryLen, targetLen);
+    btMatrix = static_cast<uint8_t*>(mem_align(16, queryLen * targetLen * sizeof(uint8_t)));
 
     // Define block matrices
     // int length = targetLen / 4;
@@ -49,7 +63,6 @@ FwBwAligner::FwBwAligner(size_t queryLen, size_t targetLen, size_t length, size_
     memset(zmaxForward, 0, (queryLen + 1) * sizeof(float)); 
     zmaxBackward = static_cast<float*>(malloc((queryLen + 1) * sizeof(float)));
     memset(zmaxBackward, 0, (queryLen + 1) * sizeof(float)); 
-
 
     // mat3di = malloc_matrix<float>(21, 21);
     blosum = malloc_matrix<float>(21, 21);
@@ -91,6 +104,7 @@ FwBwAligner::~FwBwAligner(){
     free(zeBackward);
     free(zfBackward);
     free(P);
+    free(btMatrix);
     free(zmaxBlocksMaxForward);
     free(zmaxBlocksMaxBackward);
     free(zmaxForward);
@@ -276,11 +290,8 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
         }
     }
     float logsumexp_zm = max_zm + log(sum_exp);
-    // std::cout << "logsumexp_zm\t" << logsumexp_zm << " " << logsumexp_zm_mine << "\n";
+
     // compute posterior probabilities
-    float max_p = 0.0;
-    size_t max_i;
-    size_t max_j;
     for (size_t i = 0; i < queryLen; ++i) {
         for (size_t j = 0; j < targetLen; ++j) {
             P[i][j] = exp(
@@ -289,74 +300,63 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
                 - log(scoreForward[i][j]) // FIXME scoreForward is already exp(S/T)
                 - logsumexp_zm
             );
-            if (P[i][j] > max_p) {
-                max_p = P[i][j];
+        }
+    }
+    
+    // MAC algorithm from HH-suite
+    uint8_t val;
+    size_t max_i;
+    size_t max_j;
+    float mact = 0.035;
+    float S_prev[targetLen + 1];
+    float S_curr[targetLen + 1];
+    float term1, term2, term3, term4 = 0.0f;
+    float score_MAC = -std::numeric_limits<float>::max();
+    for (size_t j = 0; j <= targetLen; ++j) {
+        S_prev[j] = 0.0; 
+        S_curr[j] = 0.0;
+    }
+    btMatrix[0] = States::STOP;
+    for (size_t i = 0; i < queryLen; ++i) {
+        for (size_t j = 0; j < targetLen; ++j) {
+            term1 = P[i][j] - mact;
+            term2 = S_prev[j] + P[i][j] - mact;
+            term3 = S_prev[j + 1] - 0.5 * mact;
+            term4 = S_curr[j] - 0.5 * mact;
+            calculate_max4(S_curr[j + 1], term1, term2, term3, term4, val);
+            btMatrix[i * targetLen + j] = val;
+            if ((i == queryLen - 1 || j ==targetLen - 1) && S_curr[j + 1] > score_MAC) {
                 max_i = i;
                 max_j = j;
+                score_MAC = S_curr[j + 1];
             }
         }
-    }
-    // Print elements of P[0][0]
-    // std::cout << "P[0][0]: " << P[0][0] << " " << zmForward[0][0] << " " << zmBackward[queryLen - 1][targetLen - 1] << " " << log(scoreForward[0][0]) << " " << logsumexp_zm << "\n";
-    //Debug: print querySeq and targetSeq
-    // std::cout << "querySeq:\n" << querySeq << "\ntargetSeq:\n" << targetSeq << "\n";
-    //Debug: print P
-    // for (size_t i = 0; i < queryLen; ++i) {
-    //     for (size_t j = 0; j < targetLen; ++j) {
-    //         std::cout << P[i][j] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
-    // print elements of P[max_i][max_j]
-    Debug(Debug::INFO) << " Maximum index: " << max_i << " " << max_j << " max_p: " << max_p << "\n";
-    Debug(Debug::INFO) << " Elements: " << zmForward[max_i][max_j] << " " << zmBackward[queryLen - 1 - max_i][targetLen - 1 - max_j] << " " << log(scoreForward[max_i][max_j]) << " " << logsumexp_zm << "\n";
-    // If max_p is above 100000, print max_p, querySeq, targetSeq and terminate
-    if (max_p > 1.0 || max_p < 0.0) {
-        Debug(Debug::ERROR) << "Invalid maxprob.\n";
-        for (size_t i = 0; i < queryLen; ++i) {
-            for (size_t j = 0; j < targetLen; ++j) {
-                std::cout << P[i][j] << " ";
-            }
-        std::cout << std::endl;
+        for (size_t j = 0; j <= targetLen; ++j) {
+            S_prev[j] = S_curr[j];
         }
-        std::cout << "error maxprob: " << max_p << "\nquerySeq:\n" << querySeq << "\ntargetSeq:\n" << targetSeq << "\n";
-        // size_t count = 0;
-        // while (querySeq[count] != '\0') {
-        //     if (querySeq[count] == '\n') {
-        //         std::cout << "newline\n" << count << "\n";
-        //     }
-        //     else {
-        //         count++;
-        //     }
-        // }
-        // std::cout << "querySeq length: " << count << "\n";
-        EXIT(EXIT_FAILURE);
     }
+
     // traceback 
     s_align result;
     result.cigar = "";
     result.cigar.reserve(queryLen + targetLen);
-    result.maxProb = max_p;
     result.qEndPos1 = max_i;
     result.dbEndPos1 = max_j;
-    float d;
-    float l;
-    float u;
+    result.score1 = score_MAC;
     while (max_i > 0 && max_j > 0) {
-        d = P[max_i - 1][max_j - 1];
-        l = P[max_i][max_j - 1];
-        u = P[max_i - 1][max_j];
-        // std::cout << std::fixed << std::setprecision(8) << max_i << '\t' << max_j << '\t' << d << '\t' << l << '\t' << u << '\n';
-        if (d > l && d > u) {
-            max_i--;
-            max_j--;
+        uint8_t state = btMatrix[max_i * targetLen + max_j];
+        if (state == States::M) {
+            --max_i;
+            --max_j;
             result.cigar.push_back('M');
-        } else if (l > d && l > u) {
-            max_j--;
+        } else if (state == States::I) {
+            --max_j;
             result.cigar.push_back('I');
-        } else {
-            max_i--;
+        } else if (state == States::D) {
+            --max_i;
             result.cigar.push_back('D');
+        } else {
+            break;
         }
     }
     result.qStartPos1 = max_i;

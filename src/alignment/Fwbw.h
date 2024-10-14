@@ -92,6 +92,7 @@ private:
     float** scoreForward;
     float** scoreBackward;
     float** P;
+    uint8_t* btMatrix;
 
     float** zmaxBlocksMaxForward;
     float** zmaxBlocksMaxBackward;
