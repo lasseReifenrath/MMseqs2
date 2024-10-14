@@ -150,7 +150,7 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
 
 
     // size_t length = targetLen / 4;
-    std::cout << "queryLen: " << queryLen << " targetLen: " << targetLen << " length: " << length << " blocks: " << blocks << std::endl;
+    std::cout << " queryLen: " << queryLen << " targetLen: " << targetLen << " length: " << length << " blocks: " << blocks << std::endl;
     for (size_t i = 0; i < length; ++i) {
         vj[i] = exp(((length - 1) * ge + go - i * ge) / T);
         wj[i] = exp(((length - 1) * ge - i * ge) / T);
@@ -225,34 +225,34 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     // Rescale the values by the maximum in the log space for each block
     // This turns the matrix into log space
     // Debug:: print zmForward before rescaling
-    std::cout << "zmForward before rescaling: " << std::endl;
-    for (size_t i = 0; i < queryLen; ++i) {
-        for (size_t j = 0; j < targetLen; ++j) {
-            std::cout << zmForward[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
-    // Debug: print zmaxBlocksMaxForward
-    std::cout << "zmaxBlocksMaxForward: " << std::endl;
-    // print number of rows and columns of zmaxBlocksMaxForward
-    std::cout << "rows: " << blocks << " columns: " << queryLen << std::endl;
+    // std::cout << "zmForward before rescaling: " << std::endl;
+    // for (size_t i = 0; i < queryLen; ++i) {
+    //     for (size_t j = 0; j < targetLen; ++j) {
+    //         std::cout << zmForward[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
+    // // Debug: print zmaxBlocksMaxForward
+    // std::cout << "zmaxBlocksMaxForward: " << std::endl;
+    // // print number of rows and columns of zmaxBlocksMaxForward
+    // std::cout << "rows: " << blocks << " columns: " << queryLen << std::endl;
 
-    for (size_t i = 0; i < blocks; ++i) {
-        for (size_t j = 0; j < queryLen; ++j) {
-            std::cout << zmaxBlocksMaxForward[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
+    // for (size_t i = 0; i < blocks; ++i) {
+    //     for (size_t j = 0; j < queryLen; ++j) {
+    //         std::cout << zmaxBlocksMaxForward[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
     rescaleBlocks(zmForward, zmaxBlocksMaxForward, queryLen, length, blocks, targetLen);
     rescaleBlocks(zmBackward, zmaxBlocksMaxBackward, queryLen, length, blocks, targetLen);
     // Debug:: print zmForward
-    std::cout << "zmForward after rescaling: " << std::endl;
-    for (size_t i = 0; i < queryLen; ++i) {
-        for (size_t j = 0; j < targetLen; ++j) {
-            std::cout << zmForward[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
+    // std::cout << "zmForward after rescaling: " << std::endl;
+    // for (size_t i = 0; i < queryLen; ++i) {
+    //     for (size_t j = 0; j < targetLen; ++j) {
+    //         std::cout << zmForward[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
 
    // compute zm max
     float max_zm = -DBL_MAX;
@@ -297,7 +297,7 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
         }
     }
     // Print elements of P[0][0]
-    std::cout << "P[0][0]: " << P[0][0] << " " << zmForward[0][0] << " " << zmBackward[queryLen - 1][targetLen - 1] << " " << log(scoreForward[0][0]) << " " << logsumexp_zm << "\n";
+    // std::cout << "P[0][0]: " << P[0][0] << " " << zmForward[0][0] << " " << zmBackward[queryLen - 1][targetLen - 1] << " " << log(scoreForward[0][0]) << " " << logsumexp_zm << "\n";
     //Debug: print querySeq and targetSeq
     // std::cout << "querySeq:\n" << querySeq << "\ntargetSeq:\n" << targetSeq << "\n";
     //Debug: print P
@@ -308,7 +308,8 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     //     std::cout << std::endl;
     // }
     // print elements of P[max_i][max_j]
-    Debug(Debug::INFO) << "Index: " << max_i << " " << max_j << " elements: " << zmForward[max_i][max_j] << " " << zmBackward[queryLen - 1 - max_i][targetLen - 1 - max_j] << " " << log(scoreForward[max_i][max_j]) << " " << logsumexp_zm << " " << max_p << "\n";
+    Debug(Debug::INFO) << " Maximum index: " << max_i << " " << max_j << " max_p: " << max_p << "\n";
+    Debug(Debug::INFO) << " Elements: " << zmForward[max_i][max_j] << " " << zmBackward[queryLen - 1 - max_i][targetLen - 1 - max_j] << " " << log(scoreForward[max_i][max_j]) << " " << logsumexp_zm << "\n";
     // If max_p is above 100000, print max_p, querySeq, targetSeq and terminate
     if (max_p > 1.0 || max_p < 0.0) {
         Debug(Debug::ERROR) << "Invalid maxprob.\n";
@@ -459,9 +460,9 @@ void FwBwAligner::forwardBackwardSaveBlockMaxLocal(float** S, float** z_init,
     //Fixme
     // 
     for (size_t i = 0; i < rows; ++i) {
-        z_init[0][i] = log(zmBlock[i + 1][memcpy_cols]) + rescale[i-1];
-        z_init[1][i] = log(zeBlock[i + 1][memcpy_cols]) + rescale[i-1];
-        z_init[2][i] = log(zfBlock[i + 1][memcpy_cols]) + rescale[i-1];
+        z_init[0][i] = log(zmBlock[i + 1][memcpy_cols]) + rescale[i];
+        z_init[1][i] = log(zeBlock[i + 1][memcpy_cols]) + rescale[i];
+        z_init[2][i] = log(zfBlock[i + 1][memcpy_cols]) + rescale[i];
     }
 
     for (size_t i = 0; i < rows; ++i) {
@@ -484,12 +485,12 @@ void FwBwAligner::rescaleBlocks(float **matrix, float **scale, size_t rows, size
         // size_t end = (b + 1) * length;
         std::vector<float> cumsum(rows);
         std::partial_sum(scale[b], scale[b] + rows, cumsum.begin());
-        // print cumsum vector for each block
-        std::cout << "block " << b << " cumsum: ";
-        for (size_t i = 0; i < rows; ++i) {
-            std::cout << cumsum[i] << " ";
-        }
-        std::cout << std::endl;
+        // DEBUG:: print cumsum vector for each block
+        // std::cout << "block " << b << " cumsum: ";
+        // for (size_t i = 0; i < rows; ++i) {
+        //     std::cout << cumsum[i] << " ";
+        // }
+        // std::cout << std::endl;
 
         for (size_t i = 0; i < rows; ++i) {
             for (size_t j = start; j < end; ++j) {
