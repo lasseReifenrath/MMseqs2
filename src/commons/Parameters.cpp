@@ -301,6 +301,8 @@ Parameters::Parameters():
         // unpackdb
         PARAM_UNPACK_SUFFIX(PARAM_UNPACK_SUFFIX_ID, "--unpack-suffix", "Unpack suffix", "File suffix for unpacked files.\nAdd .gz suffix to write compressed files.", typeid(std::string), (void *) &unpackSuffix, "^.*$"),
         PARAM_UNPACK_NAME_MODE(PARAM_UNPACK_NAME_MODE_ID, "--unpack-name-mode", "Unpack name mode", "Name unpacked files by 0: DB key, 1: accession (through .lookup)", typeid(int), (void *) &unpackNameMode, "^[0-1]{1}$"),
+        // fwbw
+        PARAM_MACT(PARAM_MACT_ID, "--mact", "MAC threshold", "Maximum accuracy threshold", typeid(float), (void *) &mact, "^0(\\.[0-9]+)?|^1(\\.0+)?$"),
         // for modules that should handle -h themselves
         PARAM_HELP(PARAM_HELP_ID, "-h", "Help", "Help", typeid(bool), (void *) &help, "", MMseqsParameter::COMMAND_HIDDEN),
         PARAM_HELP_LONG(PARAM_HELP_LONG_ID, "--help", "Help", "Help", typeid(bool), (void *) &help, "", MMseqsParameter::COMMAND_HIDDEN)
@@ -1310,6 +1312,18 @@ Parameters::Parameters():
     createlinindex = combineList(kmerindexdb, extractorfs);
     createlinindex = combineList(createlinindex, translatenucs);
     createlinindex.push_back(&PARAM_REMOVE_TMP_FILES);
+
+    // fwbw workflow
+    fwbw.push_back(&PARAM_SUB_MAT);
+    fwbw.push_back(&PARAM_GAP_OPEN);
+    fwbw.push_back(&PARAM_GAP_EXTEND);
+    fwbw.push_back(&PARAM_E);
+    fwbw.push_back(&PARAM_C);
+    fwbw.push_back(&PARAM_ADD_BACKTRACE);
+    fwbw.push_back(&PARAM_THREADS);
+    fwbw.push_back(&PARAM_COMPRESSED);
+    fwbw.push_back(&PARAM_V);
+    fwbw.push_back(&PARAM_MACT);
 
     // linclust workflow
     linclustworkflow = combineList(clust, align);
@@ -2588,6 +2602,9 @@ void Parameters::setDefaults() {
     // taxonomy
     taxonomySearchMode = Parameters::TAXONOMY_APPROX_2BLCA;
     taxonomyOutputMode = Parameters::TAXONOMY_OUTPUT_LCA;
+    
+    // fwbw
+    mact = 0.035;
 
     // help
     help = 0;
