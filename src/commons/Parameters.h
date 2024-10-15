@@ -704,6 +704,9 @@ public:
     // unpackdb
     std::string unpackSuffix;
     int unpackNameMode;
+    
+    // fwbw
+    float mact;
 
     // for modules that should handle -h themselves
     bool help;
@@ -1055,6 +1058,9 @@ public:
     // unpackdb
     PARAMETER(PARAM_UNPACK_SUFFIX)
     PARAMETER(PARAM_UNPACK_NAME_MODE)
+    
+    // fwbw
+    PARAMETER(PARAM_MACT)
 
     // for modules that should handle -h themselves
     PARAMETER(PARAM_HELP)

@@ -116,7 +116,7 @@ FwBwAligner::~FwBwAligner(){
 
 
 FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std::string & targetSeq, size_t queryLen, size_t targetLen,
-                                            size_t length, size_t blocks, SubstitutionMatrix &subMat){
+                                            size_t length, size_t blocks, SubstitutionMatrix &subMat, float mact){
 
     unsigned char* queryNum = seq2num(querySeq, subMat.aa2num);
     unsigned char* targetNum = seq2num(targetSeq, subMat.aa2num);
@@ -307,7 +307,6 @@ FwBwAligner::s_align FwBwAligner::align(const std::string & querySeq, const std:
     uint8_t val;
     size_t max_i;
     size_t max_j;
-    float mact = 0.035;
     float S_prev[targetLen + 1];
     float S_curr[targetLen + 1];
     float term1, term2, term3, term4 = 0.0f;
@@ -615,7 +614,7 @@ int fwbw(int argc, const char **argv, const Command &command) {
                     size_t length = 16;
                     size_t blocks = (targetLen / length) + (targetLen % length != 0);
                     FwBwAligner fwbwAligner(queryLen, targetLen, length, blocks, subMat);
-                    FwBwAligner::s_align fwbwAlignment = fwbwAligner.align(querySeq, targetSeq, queryLen, targetLen, length, blocks, subMat);
+                    FwBwAligner::s_align fwbwAlignment = fwbwAligner.align(querySeq, targetSeq, queryLen, targetLen, length, blocks, subMat, par.mact);
                     // initialize values of result_t
                     float qcov = 0.0;
                     float dbcov = 0.0;

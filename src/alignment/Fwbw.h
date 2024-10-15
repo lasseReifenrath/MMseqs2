@@ -35,7 +35,7 @@ public:
     ~FwBwAligner();
 
     s_align align(const std::string & querySeq, const std::string & targetSeq,size_t queryLen, size_t targetLen,
-                                            size_t length, size_t blocks, SubstitutionMatrix & subMat);
+                                            size_t length, size_t blocks, SubstitutionMatrix & subMat, float mact);
 
     void computeForwardScoreMatrix(const unsigned char* queryNum, const unsigned char* targetNum,
                                    unsigned int queryLen, unsigned int targetLen,
