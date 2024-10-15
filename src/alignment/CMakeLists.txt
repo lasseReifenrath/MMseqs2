@@ -11,7 +11,6 @@ set(alignment_header_files
         alignment/BandedNucleotideAligner.h
         alignment/DistanceCalculator.h
         alignment/Fwbw.h
-        PARENT_SCOPE
         )
 
 set(alignment_source_files
@@ -26,5 +25,4 @@ set(alignment_source_files
         alignment/BandedNucleotideAligner.cpp
         alignment/rescorediagonal.cpp
         alignment/Fwbw.cpp
-        PARENT_SCOPE
         )

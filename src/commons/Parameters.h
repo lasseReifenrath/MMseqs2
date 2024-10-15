@@ -1080,6 +1080,7 @@ public:
     std::vector<MMseqsParameter*> alignall;
     std::vector<MMseqsParameter*> align;
     std::vector<MMseqsParameter*> rescorediagonal;
+    std::vector<MMseqsParameter*> fwbw;
     std::vector<MMseqsParameter*> alignbykmer;
     std::vector<MMseqsParameter*> createFasta;
     std::vector<MMseqsParameter*> convertprofiledb;

@@ -496,6 +496,17 @@ Parameters::Parameters():
     rescorediagonal.push_back(&PARAM_COMPRESSED);
     rescorediagonal.push_back(&PARAM_V);
 
+    //fwbw alignment
+    fwbw.push_back(&PARAM_SUB_MAT);
+    fwbw.push_back(&PARAM_GAP_OPEN);
+    fwbw.push_back(&PARAM_GAP_EXTEND);
+    fwbw.push_back(&PARAM_E);
+    fwbw.push_back(&PARAM_C);
+    fwbw.push_back(&PARAM_ADD_BACKTRACE);
+    fwbw.push_back(&PARAM_THREADS);
+    fwbw.push_back(&PARAM_COMPRESSED);
+    fwbw.push_back(&PARAM_V);
+
     // alignbykmer
     alignbykmer.push_back(&PARAM_SUB_MAT);
     alignbykmer.push_back(&PARAM_K);
