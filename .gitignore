@@ -29,7 +29,8 @@
 *.swp
 src/workflow/time_test
 
-build/
+build*/
+tmp*/
 .idea/
 cmake-build-*/
 BenchmarkingDatas/
