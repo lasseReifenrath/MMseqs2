@@ -26,7 +26,6 @@
 #include "Parameters.h"
 #include "simd.h"
 #include "StripedSmithWaterman.h"
-#include "UngappedAlignment.h"
 
 #include "Util.h"
 #include "SubstitutionMatrix.h"
@@ -405,7 +404,7 @@ std::pair<alignment_end, alignment_end> sw_sse2_word(
 				simdi_store(pvHStore + j, vH);
 				vH = simdui16_subs(vH, vGapO);
 				vF = simdui16_subs(vF, vGapE);
-				if (UNLIKELY(!simd_any(simdi16_gt(vF, vH)))) goto end;
+				if (UNLIKELY(!simdi16_gt_any(vF, vH))) goto end;
 			}
 		}
 
@@ -517,7 +516,6 @@ std::pair<alignment_end, alignment_end> sw_sse2_int(
 
 	simd_int vMaxScore = vZero; /* Trace the highest score of the whole SW matrix. */
 	simd_int vMaxMark = vZero; /* Trace the highest score till the previous column. */
-	simd_int vTemp;
 	int32_t edge, begin = 0, end = db_length, step = 1;
 
 	/* outer loop to process the reference sequence */
@@ -584,14 +582,12 @@ std::pair<alignment_end, alignment_end> sw_sse2_int(
 				simdi_store(pvHStore + j, vH);
 				vH = simdui32_subs(vH, vGapO);
 				vF = simdui32_subs(vF, vGapE);
-				if (UNLIKELY(! simdi8_movemask(simdi32_gt(vF, vH)))) goto end;
+				if (UNLIKELY(! simdi32_gt_any(vF, vH))) goto end;
 			}
 		}
 		end:
 		vMaxScore = simdi32_max(vMaxScore, vMaxColumn);
-		vTemp = simdi32_eq(vMaxMark, vMaxScore);
-		uint32_t cmp = simdi8_movemask(vTemp);
-		if (cmp != SIMD_MOVEMASK_MAX) {
+		if (!simdi32_eq_all(vMaxMark, vMaxScore)) {
 			uint32_t temp;
 			vMaxMark = vMaxScore;
 			max4(temp, vMaxScore);
@@ -795,42 +791,6 @@ void SmithWaterman::freeBlockTrace() {
 	}
 }
 
-
-/* Generate query profile rearrange query sequence & calculate the weight of match/mismatch. */
-template <typename T, size_t Elements, unsigned int type>
-void createQueryProfile(simd_int *profile, const int8_t *query_sequence, const int8_t * composition_bias, const int8_t *mat,
-        const int32_t query_length, const int32_t aaSize, uint8_t bias, const int32_t offset, const int32_t entryLength) {
-	const int32_t segLen = (query_length + Elements - 1) / Elements;
-	T* t = (T*) profile;
-    for (int32_t nt = 0; LIKELY(nt < aaSize); nt++) {
-		for (int32_t i = 0; i < segLen; i++) {
-			int32_t  j = i;
-			for (size_t segNum = 0; LIKELY(segNum < Elements) ; segNum++) {
-				// if will be optmized out by compiler
-				if(type == SmithWaterman::SUBSTITUTIONMATRIX) {    // substitution score for query_seq constrained by nt
-					// query_sequence starts from 1 to n
-					// *t++ = ( j >= query_length) ? bias : mat[nt * aaSize + query_sequence[j + offset ]] + composition_bias[j + offset] + bias; // mat[nt][q[j]] mat eq 20*20
-					if (j >= query_length) {
-						*t++ = bias;
-					} else {
-						const int q = query_sequence[j + offset];
-						const float cb = composition_bias[j + offset];
-						*t++ = mat[nt * aaSize + q] + cb + bias;
-					}
-				} if(type == SmithWaterman::PROFILE) {
-                    // profile starts by 0
-//                    *t++ = (j >= query_length) ? bias : (mat[nt * entryLength + (j + (offset - 1))] + bias); //mat eq L*20  // mat[nt][j]
-                    *t++ = (j >= query_length) ? bias : mat[nt * entryLength + j + offset] + bias;
-//					// profile starts by 0 // TODO: offset?
-//					*t++ = (j >= query_length) ? bias : mat[nt * entryLength + j + offset] + bias; //mat eq L*20  // mat[nt][j]
-//					printf("(%1d, %1d) ", j , *(t-1));
-				}
-				j += segLen;
-			}
-			// std::cout << std::endl;
-		}
-	}
-}
 
 uint8_t SmithWaterman::computeBias(const int32_t target_length, const int8_t *mat, const int32_t aaSize) {
     int8_t db_bias = 0;
@@ -1852,119 +1812,3 @@ s_align SmithWaterman::scoreIdentical(unsigned char *dbSeq, int L, EvalueComputa
     r.identicalAACnt = L;
 	return r;
 }
-
-template <typename F>
-inline F simd_hmax(const F * in, unsigned int n) {
-    F current = std::numeric_limits<F>::min();
-    do {
-        current = std::max(current, *in++);
-    } while(--n);
-
-    return current;
-}
-
-int SmithWaterman::ungapped_alignment(const unsigned char *db_sequence, int32_t db_length) {
-    return ungapped_alignment_impl<false>(db_sequence, db_length, NULL);
-}
-
-// Reports the diagonal of the best-scoring cell alongside the score. See the header.
-int SmithWaterman::ungapped_alignment(const unsigned char *db_sequence, int32_t db_length,
-                                      int &bestDiagonal) {
-    bestDiagonal = 0;
-    return ungapped_alignment_impl<true>(db_sequence, db_length, &bestDiagonal);
-}
-
-template <bool TrackDiagonal>
-int SmithWaterman::ungapped_alignment_impl(const unsigned char *db_sequence, int32_t db_length,
-                                           int *bestDiagonalOut) {
-#define SWAP(tmp, arg1, arg2) tmp = arg1; arg1 = arg2; arg2 = tmp;
-
-    int i; // position in query bands (0,..,W-1)
-    int j; // position in db sequence (0,..,dbseq_length-1)
-    int element_count = (VECSIZE_INT * 4);
-    const int W = (profile->query_length + (element_count - 1)) /
-                  element_count; // width of bands in query and score matrix = hochgerundetes LQ/16
-
-    simd_int *p;
-    simd_int S;              // 16 unsigned bytes holding S(b*W+i,j) (b=0,..,15)
-    simd_int Smax = simdi_setzero();
-    int trackedBest = 0;      // running max, only maintained when TrackDiagonal
-    int trackedDiagonal = 0;  // diagonal (queryPos - dbPos) that produced trackedBest
-    simd_int Soffset; // all scores in query profile are shifted up by Soffset to obtain pos values
-    simd_int *s_prev, *s_curr; // pointers to Score(i-1,j-1) and Score(i,j), resp.
-    simd_int *qji;             // query profile score in row j (for residue x_j)
-    simd_int *s_prev_it, *s_curr_it;
-    simd_int *query_profile_it = (simd_int *) profile->profile_byte;
-
-    // Load the score offset to all 16 unsigned byte elements of Soffset
-    Soffset = simdi8_set(profile->bias);
-    s_curr = simdData->vHStore;
-    s_prev = simdData->vHLoad;
-
-    memset(simdData->vHStore, 0, W * sizeof(simd_int));
-    memset(simdData->vHLoad, 0, W * sizeof(simd_int));
-
-    for (j = 0; j < db_length; ++j) // loop over db sequence positions
-    {
-
-        // Get address of query scores for row j
-        qji = query_profile_it + db_sequence[j] * W;
-
-        // Load the next S value
-        S = simdi_load(s_curr + W - 1);
-        S = simdi8_shiftl(S, 1);
-
-        // Swap s_prev and s_curr, smax_prev and smax_curr
-        SWAP(p, s_prev, s_curr);
-
-        s_curr_it = s_curr;
-        s_prev_it = s_prev;
-
-        for (i = 0; i < W; ++i) // loop over query band positions
-        {
-            // Saturated addition and subtraction to score S(i,j)
-            S = simdui8_adds(S, *(qji++)); // S(i,j) = S(i-1,j-1) + (q(i,x_j) + Soffset)
-            S = simdui8_subs(S, Soffset);       // S(i,j) = max(0, S(i,j) - Soffset)
-            simdi_store(s_curr_it++, S);       // store S to s_curr[i]
-            Smax = simdui8_max(Smax, S);       // Smax(i,j) = max(Smax(i,j), S(i,j))
-
-            // Load the next S and Smax values
-            S = simdi_load(s_prev_it++);
-        }
-        if (TrackDiagonal) {
-            // Smax only ever grows, so a bigger horizontal max means this column j produced a new
-            // best cell. That happens at most 255 times (byte scores), so locating it by scanning
-            // the column is cheap; the per-column cost is one horizontal max.
-            const int columnBest = (int) simdi8_hmax(Smax);
-            if (columnBest > trackedBest) {
-                trackedBest = columnBest;
-                const unsigned char *cells = (const unsigned char *) s_curr;
-                for (int band = 0; band < W; band++) {
-                    for (int lane = 0; lane < element_count; lane++) {
-                        // striped layout: query position = band + lane * W (createQueryProfile)
-                        const int queryPos = band + lane * W;
-                        if (queryPos >= profile->query_length) {
-                            continue;  // padded lanes, never the real maximum
-                        }
-                        if ((int) cells[band * element_count + lane] == columnBest) {
-                            trackedDiagonal = queryPos - j;
-                            band = W;  // break out of both loops
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    int score = simd_hmax((unsigned char *) &Smax, element_count);
-    if (TrackDiagonal) {
-        *bestDiagonalOut = trackedDiagonal;
-    }
-
-    /* return largest score */
-    return score;
-#undef SWAP
-}
-
-template int SmithWaterman::ungapped_alignment_impl<false>(const unsigned char *, int32_t, int *);
-template int SmithWaterman::ungapped_alignment_impl<true>(const unsigned char *, int32_t, int *);
